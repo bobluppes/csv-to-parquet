@@ -1,27 +1,44 @@
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.types._
 
+import org.apache.log4j.{Level, Logger}
+
 object HelloSpark {
+
+  val csvFile = "/home/bob/Documents/thesis/data/Taxi_Trips.csv"
+
   def main(args: Array[String]) {
-    val spark = SparkSession.builder.appName("hello spark").getOrCreate()
 
-    val rows = Seq(
-      Row(1, "hello"),
-      Row(2, "world")
-    )
+    // Set log level to error to avoid abundant info logs
+    Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
 
-    val schema = StructType(List(
-      StructField("number", IntegerType, nullable = true),
-      StructField("word", StringType, nullable = true)
-    ))
+    val codec = "uncompressed"
 
-    val df = spark.createDataFrame(
-      spark.sparkContext.parallelize(rows),
-      schema
-    )
+    val spark = SparkSession
+      .builder
+      .master("local[*]")
+      .appName("hello spark")
+      .getOrCreate()
+    import spark.implicits._
 
-    println("count: ")
-    println(df.count())
+    //write it as uncompressed file
+    spark.conf.set("spark.sql.parquet.compression.codec", codec)
+
+    var df = spark.read
+      .options(Map("header" -> "true"))
+      .csv(csvFile)
+      .repartition(1) //we want to have everything in 1 file
+      .limit(150 * 1000000)
+
+    // Replace illegal whitespaces in column names
+    for (i <- df.schema.names) {
+      df = df.withColumnRenamed(i, i.replace(" ", "_"))
+    }
+
+    df.write
+      .parquet("Taxi_Trips_150M.parquet")
+
+    println("Written to parquet file")
 
     spark.stop()
   }
